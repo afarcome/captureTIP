@@ -30,11 +30,17 @@ stdErr: whether to compute standard errors (defaults to FALSE)
 Output is a list with elements:
 
 lk: the log-likelihood at convergence
+
 alpha.v, beta.v, eta, theta.v, gamm, mu.v: parameter estimates (in the notation of the paper)
+
 piC: parameter estimates for the prior latent mass probabilities
+
 Nhat: population size estimate
-seN: standard error for population size estimate (NA if stdErr=FALSE) 
-J: observed information matrix 
+
+seN: standard error for population size estimate (NA if stdErr=FALSE)
+
+J: observed information matrix
+
 aic: AIC 
 
 -- demo.R: generate a data set and estimate parameters and population size 
