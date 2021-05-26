@@ -4,7 +4,7 @@ with an application to drug dealing in Italy"
 
 The files are:
 
-- timEM.R: it contains function tipEM, implementing the Expectation-Maximization algorithm for estimating a Time Interaction Process by maximizing the conditional likelihood. Inputs are:
+-- timEM.R: it contains function tipEM, implementing the Expectation-Maximization algorithm for estimating a Time Interaction Process by maximizing the conditional likelihood. Inputs are:
 
 obsData: list of length n, each element is capture times for i-th individual (see demo.R) 
 XX: matrix of covariates (see demo.R)
@@ -25,11 +25,21 @@ mx: maximum number of iterations for numerical optimization algorithm at the M s
 
 o, te, b: whether to include observed covariates, time-effects, behavioural effects (all default to TRUE)
 
-stdErr: whether to compute standard errors (defaults to FALSE) 
+stdErr: whether to compute standard errors (defaults to FALSE)
 
-- demo.R: generate a data set and estimate parameters and population size 
+Output is a list with elements:
 
-- utils.R: internal functions 
+lk: the log-likelihood at convergence
+alpha.v, beta.v, eta, theta.v, gamm, mu.v: parameter estimates (in the notation of the paper)
+piC: parameter estimates for the prior latent mass probabilities
+Nhat: population size estimate
+seN: standard error for population size estimate (NA if stdErr=FALSE) 
+J: observed information matrix 
+aic: AIC 
+
+-- demo.R: generate a data set and estimate parameters and population size 
+
+-- utils.R: internal functions 
 
 Suitable comments are directly included in the demo script in order to illustrate use of the functions in R.
 
