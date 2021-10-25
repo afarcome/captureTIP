@@ -1,9 +1,9 @@
-#UPDATED MAY 25, 2021
+#UPDATED OCTOBER 25, 2021
 
 tipEM=
   function (obsData, XX, TT, CC, tol = 0.001, maxit = Inf, verbose = FALSE, 
-            inits = "det", mx = 200, 
-            o = TRUE, te = TRUE, b = TRUE, stdErr = FALSE) { 
+            inits = "det", mx = 200, infmet="EM", opMet="Nelder-Mead",  
+            o = TRUE, te = TRUE, b = TRUE, stdErr = F) { 
     
     ###INITIAL CHECKS 
     
@@ -11,8 +11,6 @@ tipEM=
       stop("Only subjects with at least one observation must be included")
     if (max(sapply(obsData, max)) > TT) 
       stop("Some subjects observed after time horizon TT")
-    if ((infmet == "EM" | infmet == "EMTMB") & stdErr) 
-      stop("Standard Errors with EM not yet implemented. Fit EM with stdErr=FALSE and then use results as inits with a direct method")
     if ((infmet=="direct"|infmet=="directTMB"|infmet=="Laplace") & CC==1)
       stop("For 1 latent class, only EM and EMTMB are implemented")
     if (is.list(inits)) {
@@ -25,19 +23,19 @@ tipEM=
       if (!te && inits$eta != 1) {
         warning("Requesting no time effects but initial eta given is not equal to unity")
       }
-      if (any(alpha.v < 0)) 
+      if (any(inits$alpha.v < 0)) 
         stop("Negative values for alpha are not admitted")
-      if (any(beta.v < 0)) 
+      if (any(inits$beta.v < 0)) 
         stop("Negative values for beta are not admitted")
-      if (any(theta.v < 0)) 
+      if (any(inits$theta.v < 0)) 
         stop("Negative values for theta are not admitted")
-      if (eta < 0) 
+      if (inits$eta < 0) 
         stop("Negative values for eta are not admitted")
-      if (any(alpha.v > beta.v)) 
-        stop("The value of alpha must be less than or equal to the value of beta")
-      if (all(round(apply(matrix(piC,ncol=CC),1,sum),5)!=1)) 
+      if (any(inits$alpha.v >= inits$beta.v)) 
+        stop("The value of alpha must be less than the value of beta")
+      if (all(round(apply(matrix(inits$piC,ncol=CC),1,sum),5)!=1)) 
         stop("The latent class probabilities must sum to 1")
-      if (length(piC) != length(alpha.v)) 
+      if (length(inits$piC) != length(inits$alpha.v)) 
         stop("The number of latent classes is inconsistent across initial values; check the length of piC, alpha.v, beta.v, theta.v, mu.v")
      }
     
@@ -57,7 +55,7 @@ tipEM=
                                           inits == "detAlt"), TRUE, FALSE)
     use.clara = ifelse(!is.list(inits) && (inits == "detBig" || 
                                              inits == "detAlt"), TRUE, FALSE)
-    sePar = seN = seN1 = seN2 = J = gr = NA
+    sePar = seN = seN1 = seN2 = J = gr = ciN = NA
     
 
     #when initial values not given
@@ -95,9 +93,19 @@ tipEM=
           if(length(which(initial.class==cl))==1)
             XX.cl=matrix(XX[initial.class == cl, ], nrow=1, ncol=pp) else
               XX.cl=as.matrix(XX[initial.class == cl, ])
-          jnk = tipEM(obsData[initial.class == cl], XX.cl, TT, CC=1, tol = 0.001, 
+          jnk = try(tipEM(obsData[initial.class == cl], XX.cl, TT, CC=1, tol = 0.001, 
                       maxit = Inf, verbose = F, inits = ifelse(use.clara, "detBig", "det"), 
-                      o = o, te = te, b = b)
+                      opMet=opMet, o = o, te = te, b = b))
+          if(inherits(jnk, "try-error")) 
+            stop(paste0("Issue with parameter optimization for class", cl, ". Try a different optimization method"))
+          if(is.list(jnk))
+          {
+            if(length(jnk)<6)
+            {
+              return(jnk)
+              stop(paste0("Issue with parameter optimization for class", cl, ". Try a different optimization method"))
+            }
+          }
           if(verbose) cat(paste("Done for class", cl), fill=T)
           
           inits$alpha.v = c(inits$alpha.v, jnk$alpha)
@@ -120,7 +128,7 @@ tipEM=
         
         if (is.alt) {
           jnk2 = tipEM(obsData, XX, TT, 1, inits = ifelse(use.clara, "detBig", "det"), 
-                       o = o, te = te, b = b)
+                       o = o, te = te, b = b, opMet=opMet)
           inits$gamm = jnk2$gamm
           inits$eta = jnk2$eta
         }
@@ -142,11 +150,11 @@ tipEM=
     
     ##when starting values are given, or after the lines above
     if (is.list(inits)) {
-      alpha.v = inits$alpha.v
-      beta.v = inits$beta.v
-      theta.v = inits$theta.v
+      alpha.v = inits$alpha.v; for(ccl in 1:CC) if(b==T & round(alpha.v[ccl],8)==0) alpha.v[ccl]=alpha.v[ccl]+1e-8
+      beta.v = inits$beta.v; for(ccl in 1:CC) if(b==T & round(beta.v[ccl],8)==round(alpha.v[ccl],8)) beta.v[ccl]=beta.v[ccl]+1e-8
+      theta.v = inits$theta.v; for(ccl in 1:CC) if(b==T & round(theta.v[ccl],8)==0) theta.v[ccl]=theta.v[ccl]+1e-8
       mu.v = inits$mu.v
-      eta = inits$eta
+      eta = inits$eta; if(te==T & round(eta,8)==0) eta=eta+1e-8
       piC = inits$piC
       gamm = inits$gamm
       par.vec = unconstrain(alpha.v, beta.v, eta, theta.v, gamm, mu.v, o, te, b)
@@ -202,35 +210,36 @@ tipEM=
       #EM INFERENCE METHOD
       
       par.vec.OLD=par.vec
-      par.vec = try(optim(par.vec.OLD, function(x) wrap.lik(x,XX, pp, obsData, TT, CC, WW, piC, o, te, b), 
-                          method = "BFGS", control = list(maxit = mx))$par, silent=T)
+      par.vec = try(optim(as.numeric(par.vec.OLD), function(x) wrap.lik(x,XX, pp, obsData, TT, CC, WW, piC, o, te, b), 
+                          method = opMet, control = list(maxit = mx))$par, silent=T)
      if(inherits(par.vec,"try-error")) 
         {
         return(list(par.vec=par.vec.OLD, XX=XX, dati=obsData, piC=piC, WW=WW))
-        stop("Issue with parameter optimization, see returned values to check the last parameter values
-             and whether it is the global optimization or the initialization of a single latent class")
+        warning("Fitting stopped. Issue with parameter optimization, see returned values to check the last parameter values
+                 and whether it is the global optimization or the initialization of a single latent class")
+        stop("Error")
         }
       
       i = 0
       if (b) {
-        alpha.v = exp(par.vec[i + 1:CC])
+        alpha.v = as.numeric(exp(par.vec[i + 1:CC]))
         i = i + CC
-        beta.v = exp(par.vec[i + 1:CC]) + alpha.v
+        beta.v = as.numeric(exp(par.vec[i + 1:CC]) + alpha.v)
         i = i + CC
       }
       if (te) {
-        eta = exp(par.vec[i + 1])
+        eta = as.numeric(exp(par.vec[i + 1]))
         i = i + 1
       }
       if (b) {
-        theta.v = exp(par.vec[i + 1:CC])
+        theta.v = as.numeric(exp(par.vec[i + 1:CC]))
         i = i + CC
       }
       if (o) {
-        gamm = par.vec[i + 1:pp]
+        gamm = as.numeric(par.vec[i + 1:pp])
         i = i + pp
       }
-      mu.v = par.vec[i + 1:CC]
+      mu.v = as.numeric(par.vec[i + 1:CC])
       
       if(CC>1)
       {
@@ -280,26 +289,73 @@ tipEM=
     wm = apply(WW, 1, which.max)
     Nhat = sum(1/diag(ma[, wm]))
     
-    #vett.condiz = sapply(1:nrow(XX), 
-    #                     function(j) 1 - exp(-lambda.integral.0capture(eta, theta.v, gamm, mu.v, 
-    #                                        matrix(XX[j, ], nrow = 1), TT, matrix(WW[j,], nrow = 1))))
-    #Nhat2 = sum(1/vett.condiz)
+    vett.condiz = sapply(1:nrow(XX), 
+                         function(j) 1 - exp(-lambda.integral.0capture(eta, theta.v, gamm, mu.v, 
+                                            matrix(XX[j, ], nrow = 1), TT, matrix(WW[j,], nrow = 1))))
+    Nhat2 = sum(1/vett.condiz)
     
     numpar=CC; #mu
       if(b) numpar=numpar+3*CC; #alpha, beta, theta
       if(te) numpar=numpar+1; #eta
       if(o) numpar=numpar+ncol(XX) #gamma
     
+    nms = c()
+    if (b)  nms = c(nms, paste0("log(alp)_", 1:CC), paste0("log(bet-alp)_", 1:CC))
+    if (te) nms = c(nms, "log(eta)")
+    if (b) nms = c(nms, paste0("log(th)_", 1:CC))
+    if (o) nms = c(nms, paste0("gam_", 1:length(gamm)))
+    nms = c(nms, paste0("mu_", 1:CC))
+    if(length(nms)==length(par.vec)) names(par.vec) = nms
+    
     if(verbose)
-      print(paste("Nhat =", round(Nhat,0), "; AIC = ", round(-2*obj + 2*numpar,2)))
+      {print(paste("Nhat =", round(Nhat,0), "; Nhat2 =", round(Nhat2,0), "; AIC = ", round(-2*obj + 2*numpar,2)))
+      print(par.vec)}
     # STORAGE
+    if(is.infinite(Nhat)) 
+      warning("Issue with parameter optimization. Try fitting with a different option for 'opMet', see the argument 'method' in ?optim. 
+      To speed up computations, you can fit the new model using the object 'inits' from the output of the current fit ")
+      
+      sePar=seN=seN1=seN2=J=gr=NULL     
     
-    
+
+      if (stdErr) {
+            ui = unconstrainPiC(alpha.v, beta.v, eta, 
+            theta.v, gamm, mu.v, piC, o, te, b)
+            ex = expand.grid(1:CC, 1:n)
+       
+        res.direct.vero = try(optim(ui, objf, CC = CC, o = o, b = b, 
+            te = te, xxobs = XX, n = n, TT = TT, obs_data = obsData, 
+            control = list(abstol = tol), ex = as.matrix(ex), 
+            hessian = TRUE), silent=T)
+        if(!inherits(res.direct.vero,"try-error")) {
+            par.vec = res.direct.vero$par
+            J = try(solve(res.direct.vero$hessian), silent=T)
+            if(!inherits(J,"try-error")) {
+            J = (J + t(J))/2
+            if (!corpcor::is.positive.definite(J)) {
+                J = corpcor::make.positive.definite(J)
+            }
+            sePar = sqrt(diag(J))
+            gr = numDeriv::grad(stDirectVec, par.vec, CC = CC, 
+                XX = XX, TT = TT, obsData = obsData, b = b, te = te, 
+                o = o, inits = inits)
+            seN1 = sqrt(t(gr) %*% J %*% gr)
+            p0 = diag(ma[, wm])
+            seN2 = sqrt(sum((1 - p0)/(p0^2)))
+            seN = sqrt(seN1^2 + seN2^2)
+	    ciN = exp(log(Nhat)-1.96*seN/Nhat)
+	    ciN = c(ciN, exp(log(Nhat)+1.96*seN/Nhat))
+        }}
+	
+        }
+
+
+      
     return(list(lk = obj, alpha.v = alpha.v, beta.v = beta.v, 
                 eta = eta, theta.v = theta.v, gamm = gamm, mu.v = mu.v, 
-                piC = piC, Nhat = Nhat, #Nhat2 = Nhat2, 
-                WW = WW, ma = ma,
-                #sePar = sePar, seN = seN, seN1 = seN1, seN2 = seN2, J = J, gr = gr
+                piC = piC, Nhat = Nhat, Nhat2 = Nhat2, 
+                WW = WW, ma = ma, inits= inits,
+                sePar = sePar, seN = seN, seN1 = seN1, seN2 = seN2, J = J, gr = gr, ciN = ciN, 
                 aic = round(-2*obj + 2*numpar,2)))
   }
 

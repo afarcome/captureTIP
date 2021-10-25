@@ -39,6 +39,8 @@ Nhat: population size estimate
 
 seN: standard error for population size estimate (NA if stdErr=FALSE)
 
+ciN: 95% confidence interval for population size (NA if stdErr=FALSE)
+
 J: observed information matrix
 
 aic: AIC 
