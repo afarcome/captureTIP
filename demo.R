@@ -28,12 +28,12 @@ fake.fit = tipEM(obsData = fake.data, #list of captured subjects
                  inits = "det",       #initial parameter values, see below
                  infmet = "EM",       #inference method (currently, only EM is possible)
                  mx = 200,            #maximum number of iterations for parameter optimization at each EM step
-                 #met = "NM",          #currently fixed to "NM" for EM algorithm
+                 #met = "NM",         #currently fixed to "NM" for EM algorithm
                  opMet = "BFGS",      #optimization method, see ?optim
                  o = TRUE,            #TRUE: model with covariates (Mo models)
                  te = TRUE,           #TRUE: model with time effect (Mt models)
                  b = TRUE,            #TRUE: model with behavioural effect (Mb models)
-                 stdErr = TRUE)      #se for parameters, and ci for N 
+                 stdErr = TRUE)       #se for parameters, and ci for N 
 
 #Note: XX cannot be empty. If you want to fit a model without covariates, add a random
 #      covariate as XX and then set o =F
